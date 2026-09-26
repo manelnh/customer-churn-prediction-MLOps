@@ -28,6 +28,40 @@ PRODUCTION_BASELINE_PARAMS = {'C': 100.0, 'solver': 'lbfgs', 'penalty': 'l2', 'c
 PRODUCTION_BASELINE_METRICS = {'accuracy': 0.867, 'f1': 0.785, 'roc_auc': 0.951}
 MIN_LIVE_LABEL_SAMPLE = 20
 
+PRODUCTION_BASELINE_METRICS = {'accuracy': 0.867, 'f1': 0.785, 'roc_auc': 0.951}
+MIN_LIVE_LABEL_SAMPLE = 20
+
+DEFAULT_DECISION_THRESHOLD = 0.51  # matches the medium/high risk boundary used in get_risk_label
+
+
+def classify_from_probability(probability: float, threshold: float = DEFAULT_DECISION_THRESHOLD) -> tuple[str, str]:
+    """
+    Classify a churn probability into a (predicted_label, predicted_risk) pair.
+
+    predicted_label is the binary outcome ('Churn' / 'No Churn') used for
+    ground-truth comparisons; predicted_risk reuses the existing risk tiers.
+    """
+    predicted_label = 'Churn' if probability >= threshold else 'No Churn'
+    predicted_risk, _ = get_risk_label(probability)
+    return predicted_label, predicted_risk
+
+
+def calculate_model_selection_score(metrics: dict, f1_weight: float = 0.7, roc_auc_weight: float = 0.3) -> float:
+    """
+    Compute a single composite score used to rank candidate models
+    (e.g. across Technical Lab runs) by validation performance.
+
+    Defaults to a weighted blend of F1 and ROC-AUC; adjust the weights
+    if run_training.py already uses a different selection formula.
+    """
+    f1 = metrics.get('f1', 0.0)
+    roc_auc = metrics.get('roc_auc', 0.0)
+    return (f1_weight * f1) + (roc_auc_weight * roc_auc)
+
+
+def load_model_bundle():
+    """Load the production model bundle (model, dict vectorizer, scaler)."""
+    ...
 
 def load_model_bundle():
     """Load the production model bundle (model, dict vectorizer, scaler)."""
