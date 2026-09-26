@@ -124,10 +124,20 @@ def ensure_governance_table(connection):
         connection.commit()
 
 
-def ensure_platform_tables(connection):
-    ensure_prediction_table(connection)
-    ensure_monitoring_alerts_table(connection)
-    ensure_governance_table(connection)
+def bootstrap_platform_tables_if_enabled(connection) -> bool:
+    """
+    Create/ensure all platform tables (predictions, monitoring alerts,
+    governance decisions), but only if bootstrapping is enabled via env var.
+
+    This lets you disable ad-hoc table creation in environments where
+    Alembic migrations are the source of truth for schema changes
+    (e.g. production), while still allowing it for local/dev convenience.
+    """
+    if os.getenv('BOOTSTRAP_TABLES_ON_START', 'true').lower() not in ('1', 'true', 'yes'):
+        return False
+
+    ensure_platform_tables(connection)
+    return True
 
 
 def insert_prediction_log(
