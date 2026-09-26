@@ -1,9 +1,15 @@
 import os
 import pickle
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+try:
+    import mlflow
+except ModuleNotFoundError:
+    mlflow = None
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -27,44 +33,180 @@ DEFAULT_DROP_COLUMNS = ['Support_Tickets', 'App_Logins']
 PRODUCTION_BASELINE_PARAMS = {'C': 100.0, 'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced'}
 PRODUCTION_BASELINE_METRICS = {'accuracy': 0.867, 'f1': 0.785, 'roc_auc': 0.951}
 MIN_LIVE_LABEL_SAMPLE = 20
+DEFAULT_DECISION_THRESHOLD = 0.5
+MODEL_REGISTRY_NAME = 'lr'
+MLFLOW_BUNDLE_ARTIFACT_PATH = 'production_bundle/churn_production_bundle.pkl'
+PRODUCTION_MODEL_ALIAS = 'champion'
+CANDIDATE_MODEL_ALIAS = 'candidate'
+
+
+def get_latest_model_version_by_alias_or_stage(
+    client,
+    model_name: str,
+    alias: str = PRODUCTION_MODEL_ALIAS,
+    stage: str | None = 'Production',
+):
+    """Prefer model aliases, with a stage-based fallback for older registry state."""
+    try:
+        return client.get_model_version_by_alias(model_name, alias)
+    except Exception:
+        if stage is None:
+            raise
+
+    versions = client.search_model_versions(f"name = '{model_name}'")
+    stage_matches = [
+        version for version in versions
+        if getattr(version, 'current_stage', None) == stage
+    ]
+    if not stage_matches:
+        raise FileNotFoundError(f'No model version found for "{model_name}" using alias "{alias}" or stage "{stage}".')
+    return max(stage_matches, key=lambda version: int(version.version))
+
+
+def validate_model_bundle(bundle: dict):
+    model = bundle['model']
+    dv = bundle['dv']
+    scaler = bundle['scaler']
+
+    dv_feature_count = len(dv.get_feature_names_out())
+    scaler_feature_count = getattr(scaler, 'n_features_in_', None)
+    model_feature_count = getattr(model, 'n_features_in_', None)
+
+    if dv_feature_count == scaler_feature_count == model_feature_count:
+        return model, dv, scaler
+
+    raise ValueError(
+        'Incompatible bundle: '
+        f'dv={dv_feature_count}, scaler={scaler_feature_count}, model={model_feature_count}'
+    )
+
+
+def load_latest_production_bundle_from_mlflow(
+    model_name: str = MODEL_REGISTRY_NAME,
+    artifact_path: str = MLFLOW_BUNDLE_ARTIFACT_PATH,
+) -> dict:
+    if mlflow is None:
+        raise ModuleNotFoundError('mlflow is not installed')
+
+    mlflow_tracking_uri = get_mlflow_tracking_uri()
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    client = mlflow.MlflowClient()
+    latest_version = get_latest_model_version_by_alias_or_stage(client, model_name, alias=PRODUCTION_MODEL_ALIAS, stage='Production')
+    local_artifact_path = mlflow.artifacts.download_artifacts(
+        run_id=latest_version.run_id,
+        artifact_path=artifact_path,
+    )
+    bundle = load_bundle(local_artifact_path)
+    metadata = bundle.setdefault('metadata', {})
+    metadata.setdefault('mlflow_model_name', model_name)
+    metadata.setdefault('mlflow_model_version', latest_version.version)
+    metadata.setdefault('mlflow_run_id', latest_version.run_id)
+    creation_timestamp = getattr(latest_version, 'creation_timestamp', None)
+    if creation_timestamp:
+        deployed_at = datetime.fromtimestamp(creation_timestamp / 1000, tz=timezone.utc).isoformat()
+        metadata.setdefault('deployed_at', deployed_at)
+    return bundle
 
 
 def load_model_bundle():
     """Load the production model bundle (model, dict vectorizer, scaler)."""
-    candidate_paths = [LEGACY_MODEL_BUNDLE_PATH, MODEL_BUNDLE_PATH]
+    bundle = load_active_model_bundle()
+    return validate_model_bundle(bundle)
+
+
+def load_active_model_bundle() -> dict:
+    """Load the active production bundle with metadata."""
+    bundle_loaders = []
+    if mlflow is not None:
+        bundle_loaders.append(
+            (
+                'MLflow Production registry',
+                lambda: load_latest_production_bundle_from_mlflow(),
+            )
+        )
+    bundle_loaders.extend(
+        [
+            ('legacy local bundle', lambda: load_bundle(LEGACY_MODEL_BUNDLE_PATH)),
+            ('local production bundle', lambda: load_bundle(MODEL_BUNDLE_PATH)),
+        ]
+    )
     last_error = None
 
-    for bundle_path in candidate_paths:
-        if not bundle_path.exists():
-            continue
-
+    for source_name, bundle_loader in bundle_loaders:
         try:
-            bundle = load_bundle(bundle_path)
-            model = bundle['model']
-            dv = bundle['dv']
-            scaler = bundle['scaler']
-
-            dv_feature_count = len(dv.get_feature_names_out())
-            scaler_feature_count = getattr(scaler, 'n_features_in_', None)
-            model_feature_count = getattr(model, 'n_features_in_', None)
-
-            if dv_feature_count == scaler_feature_count == model_feature_count:
-                return model, dv, scaler
-
-            last_error = ValueError(
-                f'Incompatible bundle at {bundle_path}: '
-                f'dv={dv_feature_count}, scaler={scaler_feature_count}, model={model_feature_count}'
-            )
+            bundle = bundle_loader()
+            validate_model_bundle(bundle)
+            return bundle
         except Exception as exc:
-            last_error = exc
+            last_error = RuntimeError(f'{source_name} could not be loaded: {exc}')
 
     if last_error is not None:
         raise last_error
 
     raise FileNotFoundError(
-        f'No model bundle found. Expected one of: '
-        f'{", ".join(str(path) for path in candidate_paths)}'
+        'No model bundle found in MLflow Production registry or local bundle paths: '
+        f'{LEGACY_MODEL_BUNDLE_PATH}, {MODEL_BUNDLE_PATH}'
     )
+
+
+def load_bundle_metadata(path: str | Path) -> dict:
+    bundle = load_bundle(path)
+    return bundle.get('metadata', {})
+
+
+def get_active_bundle_metadata() -> dict:
+    try:
+        bundle = load_active_model_bundle()
+        return bundle.get('metadata', {})
+    except Exception:
+        return {}
+
+
+def get_baseline_metrics_from_metadata(metadata: dict | None = None) -> dict:
+    metadata = metadata or {}
+    baseline = metadata.get('test_metrics') or metadata.get('val_metrics') or {}
+    if not baseline:
+        return get_production_baseline_metrics()
+    merged = get_production_baseline_metrics()
+    merged.update({key: value for key, value in baseline.items() if value is not None})
+    return merged
+
+
+def filter_predictions_for_active_model(logs: pd.DataFrame, metadata: dict | None = None) -> pd.DataFrame:
+    if logs.empty:
+        return logs.copy()
+
+    metadata = metadata or {}
+    filtered = logs.copy()
+    mlflow_run_id = metadata.get('mlflow_run_id') or metadata.get('run_id') or metadata.get('source_candidate_run_id')
+    variant_name = metadata.get('variant_name')
+    model_registry_version = metadata.get('mlflow_model_version')
+    deployed_at = metadata.get('deployed_at')
+
+    if deployed_at and 'created_at' in filtered.columns:
+        deployed_at_ts = pd.to_datetime(deployed_at, errors='coerce', utc=True)
+        created_at_ts = pd.to_datetime(filtered['created_at'], errors='coerce', utc=True)
+        if pd.notna(deployed_at_ts):
+            deployed_window = filtered[created_at_ts >= deployed_at_ts].copy()
+            if not deployed_window.empty:
+                filtered = deployed_window
+
+    if mlflow_run_id and 'mlflow_run_id' in filtered.columns:
+        run_filtered = filtered[filtered['mlflow_run_id'] == mlflow_run_id].copy()
+        if not run_filtered.empty:
+            return run_filtered
+
+    if variant_name and 'model_version' in filtered.columns:
+        variant_filtered = filtered[filtered['model_version'] == variant_name].copy()
+        if not variant_filtered.empty:
+            return variant_filtered
+
+    if model_registry_version and 'model_version' in filtered.columns:
+        registry_filtered = filtered[filtered['model_version'] == str(model_registry_version)].copy()
+        if not registry_filtered.empty:
+            return registry_filtered
+
+    return filtered
 
 
 def get_production_baseline_params():
@@ -203,6 +345,7 @@ def train_logistic_regression_variant(
     penalty: str = 'l2',
     max_iter: int = 1000,
     class_weight: str | None = 'balanced',
+    l1_ratio: float | None = None,
     random_state: int = 42,
 ):
     model = LogisticRegression(
@@ -211,6 +354,7 @@ def train_logistic_regression_variant(
         penalty=penalty,
         max_iter=max_iter,
         class_weight=class_weight,
+        l1_ratio=l1_ratio,
         random_state=random_state,
     )
     model.fit(X_train, y_train)
@@ -239,6 +383,7 @@ def run_logistic_regression_experiment(
     penalty: str = 'l2',
     max_iter: int = 1000,
     class_weight: str | None = 'balanced',
+    l1_ratio: float | None = None,
     random_state: int = 42,
 ) -> dict:
     model = train_logistic_regression_variant(
@@ -249,13 +394,17 @@ def run_logistic_regression_experiment(
         penalty=penalty,
         max_iter=max_iter,
         class_weight=class_weight,
+        l1_ratio=l1_ratio,
         random_state=random_state,
     )
+    val_probabilities = model.predict_proba(datasets['val']['X'])[:, 1]
+    best_threshold, _ = determine_best_threshold(datasets['val']['y'], val_probabilities)
+    model.decision_threshold_ = best_threshold
 
     metrics = {
-        'train': evaluate_model(model, datasets['train']['X'], datasets['train']['y']),
-        'val': evaluate_model(model, datasets['val']['X'], datasets['val']['y']),
-        'test': evaluate_model(model, datasets['test']['X'], datasets['test']['y']),
+        'train': evaluate_model(model, datasets['train']['X'], datasets['train']['y'], decision_threshold=best_threshold),
+        'val': evaluate_model(model, datasets['val']['X'], datasets['val']['y'], decision_threshold=best_threshold),
+        'test': evaluate_model(model, datasets['test']['X'], datasets['test']['y'], decision_threshold=best_threshold),
     }
 
     return {
@@ -265,11 +414,14 @@ def run_logistic_regression_experiment(
         'metrics': metrics,
         'precision_recall': build_precision_recall_dataframe(model, datasets['test']['X'], datasets['test']['y']),
         'params': {
+            'model_family': 'logistic_regression',
             'C': C,
             'solver': solver,
             'penalty': penalty,
             'max_iter': max_iter,
             'class_weight': class_weight,
+            'l1_ratio': l1_ratio,
+            'decision_threshold': best_threshold,
         },
     }
 
@@ -294,9 +446,52 @@ def train_classifier(X_train: np.ndarray, y_train: np.ndarray, param_grid: dict 
     return grid_search
 
 
-def evaluate_model(model, X: np.ndarray, y: np.ndarray) -> dict:
-    y_pred = model.predict(X)
+def determine_best_threshold(
+    y_true: np.ndarray,
+    y_probabilities: np.ndarray,
+    min_threshold: float = 0.20,
+    max_threshold: float = 0.80,
+    step: float = 0.01,
+) -> tuple[float, float]:
+    y_true = np.asarray(y_true)
+    y_probabilities = np.asarray(y_probabilities)
+    best_threshold = DEFAULT_DECISION_THRESHOLD
+    best_f1 = -1.0
+    threshold = min_threshold
+
+    while threshold <= max_threshold + 1e-9:
+        y_pred = (y_probabilities >= threshold).astype(int)
+        current_f1 = f1_score(y_true, y_pred, zero_division=0)
+        if current_f1 > best_f1:
+            best_f1 = current_f1
+            best_threshold = round(threshold, 2)
+        threshold += step
+
+    return best_threshold, best_f1
+
+
+def calculate_model_selection_score(metrics: dict) -> float:
+    """Weighted validation score used to choose the best production candidate."""
+    return (
+        0.60 * float(metrics.get('f1', 0.0))
+        + 0.30 * float(metrics.get('roc_auc', 0.0))
+        + 0.10 * float(metrics.get('accuracy', 0.0))
+        - 0.05 * float(metrics.get('log_loss', 0.0))
+    )
+
+
+def classify_from_probability(probability: float, threshold: float = DEFAULT_DECISION_THRESHOLD) -> str:
+    return 'Churn' if probability >= threshold else 'No churn'
+
+
+def evaluate_model(
+    model,
+    X: np.ndarray,
+    y: np.ndarray,
+    decision_threshold: float = DEFAULT_DECISION_THRESHOLD,
+) -> dict:
     y_pred_proba = model.predict_proba(X)[:, 1]
+    y_pred = (y_pred_proba >= decision_threshold).astype(int)
     return {
         'accuracy': accuracy_score(y, y_pred),
         'precision': precision_score(y, y_pred, zero_division=0),
@@ -304,14 +499,38 @@ def evaluate_model(model, X: np.ndarray, y: np.ndarray) -> dict:
         'f1': f1_score(y, y_pred, zero_division=0),
         'roc_auc': roc_auc_score(y, y_pred_proba),
         'log_loss': log_loss(y, y_pred_proba),
+        'decision_threshold': decision_threshold,
     }
 
 
-def save_bundle(path: str | Path, model, dv: DictVectorizer, scaler: StandardScaler):
+def save_bundle(
+    path: str | Path,
+    model,
+    dv: DictVectorizer,
+    scaler: StandardScaler,
+    metadata: dict | None = None,
+):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'wb') as file:
-        pickle.dump({'model': model, 'dv': dv, 'scaler': scaler}, file)
+        pickle.dump({'model': model, 'dv': dv, 'scaler': scaler, 'metadata': metadata or {}}, file)
+
+
+def log_bundle_artifact_to_mlflow(
+    model,
+    dv: DictVectorizer,
+    scaler: StandardScaler,
+    metadata: dict | None = None,
+    artifact_dir: str = 'production_bundle',
+    filename: str = 'churn_production_bundle.pkl',
+):
+    if mlflow is None:
+        raise ModuleNotFoundError('mlflow is not installed')
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        bundle_path = Path(temp_dir) / filename
+        save_bundle(bundle_path, model, dv, scaler, metadata=metadata)
+        mlflow.log_artifact(str(bundle_path), artifact_path=artifact_dir)
 
 
 def load_bundle(path: str | Path):
@@ -613,24 +832,19 @@ def calculate_model_trust_score(alerts: list[dict]) -> int:
     return max(0, min(100, score))
 
 
-def run_lab_experiment_cached(c: float, solver: str, penalty: str, class_weight: str | None):
+def run_lab_experiment_cached(params: dict):
     """Run a lab experiment and return results (cached for Streamlit)."""
     from functools import lru_cache
+    import json
 
-    cache_key = f"{c}_{solver}_{penalty}_{class_weight}"
+    cache_key = json.dumps({'params': params}, sort_keys=True, default=str)
 
     @lru_cache(maxsize=1)
     def _run_experiment(key):
         df = load_data()
         datasets = prepare_modeling_datasets(df)
 
-        result = run_logistic_regression_experiment(
-            datasets=datasets,
-            C=c,
-            solver=solver,
-            penalty=penalty,
-            class_weight=class_weight,
-        )
+        result = run_logistic_regression_experiment(datasets=datasets, **params)
         return result
 
     return _run_experiment(cache_key)
@@ -651,6 +865,7 @@ def log_lab_run_to_mlflow(result: dict) -> str:
         mlflow.set_experiment(experiment_name)
         
         with mlflow.start_run(run_name=build_lab_run_name(result['params'])) as run:
+            mlflow.set_tag('model_type', result['params'].get('model_family', 'logistic_regression'))
             # Log parameters
             for key, value in result['params'].items():
                 mlflow.log_param(key, value)

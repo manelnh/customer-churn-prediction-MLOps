@@ -119,9 +119,11 @@ This repository uses GitHub Actions as the control plane for quality, delivery, 
 How the integration works:
 
 - `CI` runs on every push and pull request to catch Python errors, broken imports, failing tests, and Docker build regressions before code is merged.
-- `Training` can run on a weekly schedule or be launched on demand with `workflow_dispatch`, so retraining happens on clean GitHub runners instead of a developer machine.
-- `Monitoring` can run every day on a schedule or be launched on demand from GitHub to evaluate live production evidence and raise retraining signals in a traceable way.
+- `Training` is implemented as a scheduled and manually triggerable GitHub workflow with `workflow_dispatch`, which demonstrates remote retraining automation on clean GitHub runners.
+- `Monitoring` is implemented as a scheduled and manually triggerable GitHub workflow that evaluates live production evidence and can raise retraining signals in a traceable way.
 - `CD` builds and publishes the container image so the deployed app matches a reviewed Git commit and an auditable automation trail.
+
+For the live jury demonstration, the Streamlit app uses local training and local monitoring so the end-to-end flow remains reliable even if external GitHub-connected services are unavailable.
 
 Why this matters in front of a jury:
 
@@ -160,9 +162,11 @@ To activate the full MLOps automation on GitHub, configure these repository or e
 
 Using `DATABASE_URL` is the simplest option for remote monitoring workflows because it avoids splitting the PostgreSQL connection across multiple secrets.
 
-## Streamlit-To-CI/CD Retraining
+## Optional Streamlit-To-GitHub Dispatch
 
-The Monitoring Dashboard can also dispatch the GitHub `Training` workflow directly instead of retraining only inside the local app container.
+The repository still includes optional Streamlit-to-GitHub dispatch support for training and monitoring workflows.
+
+This is kept as implementation evidence, but it is not the recommended jury demo path. For the demonstration, the app uses local execution for monitoring and retraining.
 
 To enable that path, provide these runtime environment variables to the Streamlit app:
 
@@ -180,7 +184,7 @@ If you want the Streamlit app to avoid local execution and prefer GitHub-hosted 
 
 When those values are configured, the app can trigger `workflow_dispatch` on the GitHub training pipeline and pass both the retraining reason and the selected training profile.
 
-This is useful when you want retraining to happen through the same CI/CD control plane that handles auditability, centralized logs, runner isolation, and release automation.
+This is useful when you want retraining to happen through the same CI/CD control plane that handles auditability, centralized logs, runner isolation, and release automation, but it is optional for the current presentation setup.
 
 ## Important Note About GitHub-Run Training And Monitoring
 
@@ -189,6 +193,11 @@ The `Training` and `Monitoring` workflows are designed to run on GitHub-hosted r
 - They require your MLflow and PostgreSQL services to be reachable from GitHub Actions.
 - Local Docker addresses such as `http://localhost:5000` or `db` will not work from GitHub-hosted runners.
 - If your services are local-only, GitHub automation cannot reach them until you move them to an externally reachable environment.
+
+That is why the project currently uses:
+
+- GitHub Actions as proof of CI/CD and remote MLOps workflow implementation
+- local execution inside the app as the safest live demo path
 
 ## Full Remote Automation Checklist
 

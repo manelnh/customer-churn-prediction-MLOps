@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from Scripts import db_utils
 
@@ -76,6 +77,16 @@ class DbUtilsTests(unittest.TestCase):
         self.assertEqual(params[3], 'Customer renewed plan')
         self.assertEqual(params[4], 5)
         self.assertEqual(connection.commit_count, 1)
+
+    @patch('Scripts.db_utils.ensure_platform_tables')
+    def test_bootstrap_platform_tables_if_enabled_is_opt_in(self, ensure_tables_mock):
+        connection = FakeConnection()
+
+        with patch.dict('os.environ', {}, clear=False):
+            enabled = db_utils.bootstrap_platform_tables_if_enabled(connection)
+
+        self.assertFalse(enabled)
+        ensure_tables_mock.assert_not_called()
 
 
 if __name__ == '__main__':

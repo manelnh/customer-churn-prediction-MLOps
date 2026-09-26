@@ -130,6 +130,19 @@ def ensure_platform_tables(connection):
     ensure_governance_table(connection)
 
 
+def bootstrap_platform_tables_if_enabled(connection) -> bool:
+    """Optionally create platform tables for local bootstrap scenarios.
+
+    Production-style environments should apply Alembic migrations explicitly.
+    This fallback is only enabled when ENABLE_RUNTIME_DB_BOOTSTRAP is set.
+    """
+    enabled = os.getenv('ENABLE_RUNTIME_DB_BOOTSTRAP', '').strip().lower()
+    if enabled in {'1', 'true', 'yes', 'on'}:
+        ensure_platform_tables(connection)
+        return True
+    return False
+
+
 def insert_prediction_log(
     connection,
     input_features: dict,
@@ -270,6 +283,66 @@ def fetch_recent_predictions(connection, limit: int = 50) -> pd.DataFrame:
             LIMIT %s;
             ''',
             (limit,),
+        )
+        rows = cursor.fetchall()
+
+    records = []
+    for row in rows:
+        input_features = row[7] or {}
+        record = {
+            'id': row[0],
+            'created_at': row[1],
+            'model_name': row[2],
+            'model_version': row[3],
+            'model_stage': row[4],
+            'source': row[5],
+            'mlflow_run_id': row[6],
+            'top_drivers': row[8] or [],
+            'predicted_probability': row[9],
+            'predicted_label': row[10],
+            'predicted_risk': row[11],
+            'actual_label': row[12],
+            'actual_risk': row[13],
+            'actual_label_at': row[14],
+            'ground_truth_source': row[15],
+            'feedback_notes': row[16],
+            'manager_action': row[17],
+            'manager_action_at': row[18],
+        }
+        if isinstance(input_features, dict):
+            record.update(input_features)
+        records.append(record)
+
+    return pd.DataFrame(records)
+
+
+def fetch_all_predictions(connection) -> pd.DataFrame:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            '''
+            SELECT
+                id,
+                created_at,
+                model_name,
+                model_version,
+                model_stage,
+                source,
+                mlflow_run_id,
+                input_features,
+                top_drivers,
+                predicted_probability,
+                predicted_label,
+                predicted_risk,
+                actual_label,
+                actual_risk,
+                actual_label_at,
+                ground_truth_source,
+                feedback_notes,
+                manager_action,
+                manager_action_at
+            FROM prediction_logs
+            ORDER BY created_at DESC;
+            '''
         )
         rows = cursor.fetchall()
 

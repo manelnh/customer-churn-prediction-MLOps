@@ -26,13 +26,19 @@ def build_parser():
         default='manual',
         help='Human-readable reason for the training run, used for workflow logs.',
     )
+    parser.add_argument(
+        '--profile',
+        choices=['quick', 'balanced', 'full'],
+        default=os.getenv('TRAINING_PROFILE', 'quick'),
+        help='Training search profile. quick is fastest, full is the most exhaustive.',
+    )
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    print(f"Starting model training at {datetime.now()} (reason: {args.reason})")
-    train_main()
+    print(f"Starting model training at {datetime.now()} (reason: {args.reason}, profile: {args.profile})")
+    train_main(profile=args.profile)
     print(f"Training completed at {datetime.now()}")
     return 0
 

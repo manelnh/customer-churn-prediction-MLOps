@@ -1,6 +1,9 @@
 import json
 import os
 import logging
+import platform
+import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -19,8 +22,16 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in os.sys.path:
     os.sys.path.append(str(ROOT_DIR))
 
-from Scripts.db_utils import ensure_platform_tables, fetch_recent_predictions, get_postgres_connection
-from Scripts.model_utils import MIN_LIVE_LABEL_SAMPLE, PRODUCTION_BASELINE_METRICS, calculate_live_metrics, prepare_monitoring_dataframe
+from Scripts.db_utils import bootstrap_platform_tables_if_enabled, fetch_recent_predictions, get_postgres_connection
+from Scripts.model_utils import (
+    MIN_LIVE_LABEL_SAMPLE,
+    MODEL_REGISTRY_NAME,
+    PRODUCTION_BASELINE_METRICS,
+    PRODUCTION_MODEL_ALIAS,
+    calculate_live_metrics,
+    get_latest_model_version_by_alias_or_stage,
+    prepare_monitoring_dataframe,
+)
 
 
 class ModelPerformanceMonitor:
@@ -42,21 +53,18 @@ class ModelPerformanceMonitor:
     def load_baseline_metrics(self):
         if mlflow is None:
             fallback = PRODUCTION_BASELINE_METRICS.copy()
-            fallback.update({'precision': 0.70, 'recall': 0.85, 'high_risk_predictions': 100})
+            fallback.update({'precision': 0.70, 'recall': 0.85, 'high_risk_rate': 0.10})
             return fallback
 
         try:
             mlflow.set_tracking_uri(self.mlflow_tracking_uri)
             client = mlflow.MlflowClient(self.mlflow_tracking_uri)
-            # Use new API (stages parameter is deprecated since MLFlow 2.9.0)
-            prod_versions = client.get_latest_versions('lr')
-
-            # Filter for Production stage manually
-            prod_version = None
-            for v in prod_versions:
-                if v.current_stage == 'Production':
-                    prod_version = v
-                    break
+            prod_version = get_latest_model_version_by_alias_or_stage(
+                client,
+                MODEL_REGISTRY_NAME,
+                alias=PRODUCTION_MODEL_ALIAS,
+                stage='Production',
+            )
 
             if prod_version:
                 run = mlflow.get_run(prod_version.run_id)
@@ -64,20 +72,26 @@ class ModelPerformanceMonitor:
                 for key, value in run.data.metrics.items():
                     if key.startswith('test_'):
                         baseline[key.replace('test_', '')] = value
-                baseline['high_risk_predictions'] = run.data.metrics.get('high_risk_predictions', 100)
+                high_risk_rate = run.data.metrics.get('high_risk_rate')
+                if high_risk_rate is None:
+                    high_risk_predictions = run.data.metrics.get('high_risk_predictions')
+                    total_predictions = run.data.metrics.get('total_predictions')
+                    if high_risk_predictions is not None and total_predictions:
+                        high_risk_rate = high_risk_predictions / total_predictions
+                baseline['high_risk_rate'] = high_risk_rate if high_risk_rate is not None else 0.10
                 print(f"Loaded baseline metrics from production model v{prod_version.version}")
                 return baseline
         except Exception as error:
             print(f"Could not load baseline metrics from MLflow: {error}")
 
         fallback = PRODUCTION_BASELINE_METRICS.copy()
-        fallback.update({'precision': 0.70, 'recall': 0.85, 'high_risk_predictions': 100})
+        fallback.update({'precision': 0.70, 'recall': 0.85, 'high_risk_rate': 0.10})
         return fallback
 
     def calculate_current_metrics(self, days=7):
         try:
             connection = get_postgres_connection()
-            ensure_platform_tables(connection)
+            bootstrap_platform_tables_if_enabled(connection)
             df = fetch_recent_predictions(connection, limit=1000)
             connection.close()
 
@@ -138,7 +152,7 @@ class ModelPerformanceMonitor:
                 })
 
         if 'high_risk_predictions' in current_metrics and current_metrics['total_predictions'] > 0:
-            baseline_high_risk_rate = self.baseline_metrics.get('high_risk_predictions', 100) / 1000
+            baseline_high_risk_rate = self.baseline_metrics.get('high_risk_rate', 0.10)
             current_high_risk_rate = current_metrics['high_risk_predictions'] / current_metrics['total_predictions']
             if baseline_high_risk_rate > 0:
                 increase = (current_high_risk_rate - baseline_high_risk_rate) / baseline_high_risk_rate
@@ -207,10 +221,12 @@ class ModelPerformanceMonitor:
         try:
             mlflow.set_tracking_uri(self.mlflow_tracking_uri)
             mlflow.set_experiment('model_monitoring')
+            system_metrics = self.collect_system_metrics()
 
             with mlflow.start_run(run_name=f'monitoring_{datetime.now().strftime("%Y%m%d_%H%M%S")}') as run:
                 mlflow.set_tag('monitoring_type', 'performance_drift')
                 mlflow.set_tag('alerts_count', len(alerts))
+                mlflow.set_tag('runtime_platform', system_metrics.get('platform', 'unknown'))
 
                 if current_metrics:
                     metrics_to_log = {
@@ -221,6 +237,14 @@ class ModelPerformanceMonitor:
                     mlflow.log_metrics(metrics_to_log)
                     mlflow.log_param('monitoring_period_days', current_metrics.get('monitoring_period_days', 7))
 
+                numeric_system_metrics = {
+                    f'system_{key}': value
+                    for key, value in system_metrics.items()
+                    if isinstance(value, (int, float)) and value is not None
+                }
+                if numeric_system_metrics:
+                    mlflow.log_metrics(numeric_system_metrics)
+
                 if alerts:
                     mlflow.log_param('alerts', json.dumps(alerts, default=str))
                     severity_counts = {}
@@ -230,9 +254,57 @@ class ModelPerformanceMonitor:
                     for severity, count in severity_counts.items():
                         mlflow.log_metric(f'alerts_{severity}', count)
 
+                self.log_monitoring_artifacts(current_metrics, alerts, system_metrics)
+
                 print(f'Monitoring results logged to MLflow: {run.info.run_id}')
         except Exception as error:
             print(f'Could not log monitoring results: {error}')
+
+    def collect_system_metrics(self):
+        """Capture a lightweight runtime snapshot for monitoring runs."""
+        disk_usage = shutil.disk_usage(ROOT_DIR)
+        system_metrics = {
+            'cpu_count': os.cpu_count() or 0,
+            'disk_total_gb': round(disk_usage.total / (1024 ** 3), 2),
+            'disk_used_gb': round(disk_usage.used / (1024 ** 3), 2),
+            'disk_free_gb': round(disk_usage.free / (1024 ** 3), 2),
+            'platform': platform.platform(),
+            'python_version': platform.python_version(),
+        }
+        if hasattr(os, 'getloadavg'):
+            try:
+                load1, load5, load15 = os.getloadavg()
+                system_metrics.update(
+                    {
+                        'load_avg_1m': round(load1, 3),
+                        'load_avg_5m': round(load5, 3),
+                        'load_avg_15m': round(load15, 3),
+                    }
+                )
+            except OSError:
+                pass
+        return system_metrics
+
+    def log_monitoring_artifacts(self, current_metrics, alerts, system_metrics=None):
+        """Attach monitoring payloads as run artifacts for easier inspection in MLflow."""
+        if mlflow is None:
+            return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            metrics_path = Path(temp_dir) / 'current_metrics.json'
+            alerts_path = Path(temp_dir) / 'alerts.json'
+            system_metrics_path = Path(temp_dir) / 'system_metrics.json'
+
+            with open(metrics_path, 'w', encoding='utf-8') as metrics_file:
+                json.dump(current_metrics or {}, metrics_file, indent=2, default=str)
+            with open(alerts_path, 'w', encoding='utf-8') as alerts_file:
+                json.dump(alerts or [], alerts_file, indent=2, default=str)
+            with open(system_metrics_path, 'w', encoding='utf-8') as system_metrics_file:
+                json.dump(system_metrics or {}, system_metrics_file, indent=2, default=str)
+
+            mlflow.log_artifact(str(metrics_path), artifact_path='monitoring_snapshot')
+            mlflow.log_artifact(str(alerts_path), artifact_path='monitoring_snapshot')
+            mlflow.log_artifact(str(system_metrics_path), artifact_path='monitoring_snapshot')
 
     def send_alerts(self, alerts):
         if not alerts:

@@ -13,7 +13,7 @@ services:
 
   app:
     build: .
-    command: streamlit run /app/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    command: sh -c "alembic upgrade head && streamlit run /app/streamlit_app.py --server.port 8501 --server.address 0.0.0.0"
     volumes:
       - .:/app
     ports:
@@ -21,7 +21,9 @@ services:
     env_file: .env
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - MLFLOW_EXPERIMENT_NAME=churn_prediction
+      - MLFLOW_EXPERIMENT_NAME=${MLFLOW_EXPERIMENT_NAME}
+
+      - ENABLE_RUNTIME_DB_BOOTSTRAP=false
     depends_on:
       - db
       - mlflow
@@ -30,14 +32,22 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow/artifacts --host 0.0.0.0 --port 5000 --allowed-hosts=* --cors-allowed-origins=*
+    command: >-
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --serve-artifacts
+      --artifacts-destination /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+      --allowed-hosts=*
+      --cors-allowed-origins=*
     environment:
       - MLFLOW_ARTIFACT_URI=file:///mlflow/artifacts
     volumes:
-      - mlflow_artifacts:/mlflow/artifacts
+      - mlflow_data:/mlflow
     ports:
       - '5000:5000'
 
 volumes:
   postgres_data:
-  mlflow_artifacts:
+  mlflow_data:

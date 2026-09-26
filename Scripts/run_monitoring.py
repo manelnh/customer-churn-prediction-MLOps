@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import logging
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -42,7 +43,18 @@ def build_parser():
         action='store_true',
         help='Exit with status code 2 when one or more high-severity alerts are detected.',
     )
+    parser.add_argument(
+        '--auto-retrain',
+        action='store_true',
+        help='Launch the training pipeline automatically when the retraining alert threshold is reached.',
+    )
     return parser
+
+
+def launch_retraining(reason: str) -> int:
+    command = [sys.executable, str(ROOT_DIR / 'Scripts' / 'run_training.py'), '--reason', reason]
+    completed = subprocess.run(command, check=False)
+    return completed.returncode
 
 
 def main(argv=None):
@@ -59,10 +71,16 @@ def main(argv=None):
         retraining_triggered = trigger_retraining_if_needed(alerts, threshold=args.threshold)
 
         if retraining_triggered:
-            print("Retraining triggered - starting training pipeline...")
-            # In production, you would call the training script here.
-            # os.system("python Scripts/train.py")
-            print("Training not automatically started (uncomment in production)")
+            print("Retraining trigger threshold reached.")
+            if args.auto_retrain:
+                retraining_reason = f"monitoring_alert_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                exit_code = launch_retraining(retraining_reason)
+                if exit_code != 0:
+                    print(f"Training pipeline failed with exit code {exit_code}")
+                    return exit_code
+                print("Training pipeline completed successfully.")
+            else:
+                print("Automatic retraining is disabled. Re-run with --auto-retrain to launch training.")
         else:
             print("No retraining needed at this time")
     else:
