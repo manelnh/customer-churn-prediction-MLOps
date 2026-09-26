@@ -123,6 +123,10 @@ def ensure_governance_table(connection):
         )
         connection.commit()
 
+def ensure_platform_tables(connection):
+    ensure_prediction_table(connection)
+    ensure_monitoring_alerts_table(connection)
+    ensure_governance_table(connection)
 
 def bootstrap_platform_tables_if_enabled(connection) -> bool:
     """
