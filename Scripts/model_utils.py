@@ -28,36 +28,62 @@ PRODUCTION_BASELINE_PARAMS = {'C': 100.0, 'solver': 'lbfgs', 'penalty': 'l2', 'c
 PRODUCTION_BASELINE_METRICS = {'accuracy': 0.867, 'f1': 0.785, 'roc_auc': 0.951}
 MIN_LIVE_LABEL_SAMPLE = 20
 
-PRODUCTION_BASELINE_METRICS = {'accuracy': 0.867, 'f1': 0.785, 'roc_auc': 0.951}
-MIN_LIVE_LABEL_SAMPLE = 20
-
-DEFAULT_DECISION_THRESHOLD = 0.51  # matches the medium/high risk boundary used in get_risk_label
+DEFAULT_DECISION_THRESHOLD = 0.51
 
 
-def classify_from_probability(probability: float, threshold: float = DEFAULT_DECISION_THRESHOLD) -> tuple[str, str]:
-    """
-    Classify a churn probability into a (predicted_label, predicted_risk) pair.
-
-    predicted_label is the binary outcome ('Churn' / 'No Churn') used for
-    ground-truth comparisons; predicted_risk reuses the existing risk tiers.
-    """
-    predicted_label = 'Churn' if probability >= threshold else 'No Churn'
-    predicted_risk, _ = get_risk_label(probability)
-    return predicted_label, predicted_risk
+def classify_from_probability(probability: float, threshold: float = DEFAULT_DECISION_THRESHOLD) -> str:
+    return 'Churn' if probability >= threshold else 'No churn'
 
 
-def calculate_model_selection_score(metrics: dict, f1_weight: float = 0.7, roc_auc_weight: float = 0.3) -> float:
-    """
-    Compute a single composite score used to rank candidate models
-    (e.g. across Technical Lab runs) by validation performance.
-
-    Defaults to a weighted blend of F1 and ROC-AUC; adjust the weights
-    if run_training.py already uses a different selection formula.
-    """
+def calculate_model_selection_score(metrics: dict) -> float:
     f1 = metrics.get('f1', 0.0)
     roc_auc = metrics.get('roc_auc', 0.0)
-    return (f1_weight * f1) + (roc_auc_weight * roc_auc)
+    accuracy = metrics.get('accuracy', 0.0)
+    log_loss_value = metrics.get('log_loss', 0.0)
+    return f1 + 0.1 * roc_auc + 0.05 * accuracy - 0.05 * log_loss_value
 
+
+def filter_predictions_for_active_model(predictions, bundle_metadata):
+    if predictions is None or predictions.empty or not bundle_metadata:
+        return predictions
+
+    filtered = predictions.copy()
+    run_id = bundle_metadata.get('mlflow_run_id') or bundle_metadata.get('run_id')
+    variant_name = bundle_metadata.get('variant_name')
+
+    if run_id and 'mlflow_run_id' in filtered.columns:
+        matches = filtered[filtered['mlflow_run_id'] == run_id]
+        if not matches.empty:
+            return matches.reset_index(drop=True)
+
+    if variant_name and 'model_version' in filtered.columns:
+        matches = filtered[filtered['model_version'] == variant_name]
+        if not matches.empty:
+            return matches.reset_index(drop=True)
+
+    return filtered
+
+
+def get_active_bundle_metadata() -> dict:
+    for path in (MODEL_BUNDLE_PATH, LEGACY_MODEL_BUNDLE_PATH):
+        if path.exists():
+            try:
+                return load_bundle(path).get('metadata', {}) or {}
+            except Exception:
+                continue
+    return {}
+
+
+def get_baseline_metrics_from_metadata(bundle_metadata: dict | None) -> dict:
+    bundle_metadata = bundle_metadata or {}
+    baseline = bundle_metadata.get('baseline_metrics') or bundle_metadata.get('production_metrics')
+    if isinstance(baseline, dict) and baseline:
+        return {
+            'accuracy': baseline.get('accuracy', PRODUCTION_BASELINE_METRICS['accuracy']),
+            'f1': baseline.get('f1', PRODUCTION_BASELINE_METRICS['f1']),
+            'roc_auc': baseline.get('roc_auc', PRODUCTION_BASELINE_METRICS['roc_auc']),
+        }
+    return get_production_baseline_metrics()
 
 def load_model_bundle():
     """Load the production model bundle (model, dict vectorizer, scaler)."""
