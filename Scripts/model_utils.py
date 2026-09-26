@@ -107,6 +107,66 @@ def load_latest_production_bundle_from_mlflow(
         metadata.setdefault('deployed_at', deployed_at)
     return bundle
 
+DEFAULT_DECISION_THRESHOLD = 0.51
+
+
+def classify_from_probability(probability: float, threshold: float = DEFAULT_DECISION_THRESHOLD) -> str:
+    return 'Churn' if probability >= threshold else 'No churn'
+
+
+def calculate_model_selection_score(metrics: dict) -> float:
+    f1 = metrics.get('f1', 0.0)
+    roc_auc = metrics.get('roc_auc', 0.0)
+    accuracy = metrics.get('accuracy', 0.0)
+    log_loss_value = metrics.get('log_loss', 0.0)
+    return f1 + 0.1 * roc_auc + 0.05 * accuracy - 0.05 * log_loss_value
+
+
+def filter_predictions_for_active_model(predictions, bundle_metadata):
+    if predictions is None or predictions.empty or not bundle_metadata:
+        return predictions
+
+    filtered = predictions.copy()
+    run_id = bundle_metadata.get('mlflow_run_id') or bundle_metadata.get('run_id')
+    variant_name = bundle_metadata.get('variant_name')
+
+    if run_id and 'mlflow_run_id' in filtered.columns:
+        matches = filtered[filtered['mlflow_run_id'] == run_id]
+        if not matches.empty:
+            return matches.reset_index(drop=True)
+
+    if variant_name and 'model_version' in filtered.columns:
+        matches = filtered[filtered['model_version'] == variant_name]
+        if not matches.empty:
+            return matches.reset_index(drop=True)
+
+    return filtered
+
+
+def get_active_bundle_metadata() -> dict:
+    for path in (MODEL_BUNDLE_PATH, LEGACY_MODEL_BUNDLE_PATH):
+        if path.exists():
+            try:
+                return load_bundle(path).get('metadata', {}) or {}
+            except Exception:
+                continue
+    return {}
+
+
+def get_baseline_metrics_from_metadata(bundle_metadata: dict | None) -> dict:
+    bundle_metadata = bundle_metadata or {}
+    baseline = bundle_metadata.get('baseline_metrics') or bundle_metadata.get('production_metrics')
+    if isinstance(baseline, dict) and baseline:
+        return {
+            'accuracy': baseline.get('accuracy', PRODUCTION_BASELINE_METRICS['accuracy']),
+            'f1': baseline.get('f1', PRODUCTION_BASELINE_METRICS['f1']),
+            'roc_auc': baseline.get('roc_auc', PRODUCTION_BASELINE_METRICS['roc_auc']),
+        }
+    return get_production_baseline_metrics()
+
+def load_model_bundle():
+    """Load the production model bundle (model, dict vectorizer, scaler)."""
+    ...
 
 def load_model_bundle():
     """Load the production model bundle (model, dict vectorizer, scaler)."""
