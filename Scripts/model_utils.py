@@ -28,6 +28,7 @@ from sklearn.preprocessing import StandardScaler
 DATA_FILE = Path(__file__).resolve().parents[1] / 'telco_churn_cleaned.csv'
 ROOT_DIR = Path(__file__).resolve().parents[1]
 MODEL_BUNDLE_PATH = ROOT_DIR / 'models' / 'churn_production_bundle.pkl'
+ALTERNATE_MODEL_BUNDLE_PATH = ROOT_DIR / 'models' / 'churn_production_model.pkl'
 LEGACY_MODEL_BUNDLE_PATH = ROOT_DIR / 'churn_production.pkl'
 DEFAULT_DROP_COLUMNS = ['Support_Tickets', 'App_Logins']
 PRODUCTION_BASELINE_PARAMS = {'C': 100.0, 'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced'}
@@ -144,7 +145,7 @@ def filter_predictions_for_active_model(predictions, bundle_metadata):
 
 
 def get_active_bundle_metadata() -> dict:
-    for path in (MODEL_BUNDLE_PATH, LEGACY_MODEL_BUNDLE_PATH):
+    for path in (MODEL_BUNDLE_PATH, ALTERNATE_MODEL_BUNDLE_PATH, LEGACY_MODEL_BUNDLE_PATH):
         if path.exists():
             try:
                 return load_bundle(path).get('metadata', {}) or {}
@@ -187,6 +188,7 @@ def load_active_model_bundle() -> dict:
     bundle_loaders.extend(
         [
             ('local production bundle', lambda: load_bundle(MODEL_BUNDLE_PATH)),
+            ('local production model', lambda: load_bundle(ALTERNATE_MODEL_BUNDLE_PATH)),
             ('legacy local bundle', lambda: load_bundle(LEGACY_MODEL_BUNDLE_PATH)),
         ]
     )
@@ -205,7 +207,7 @@ def load_active_model_bundle() -> dict:
 
     raise FileNotFoundError(
         'No model bundle found in MLflow Production registry or local bundle paths: '
-        f'{LEGACY_MODEL_BUNDLE_PATH}, {MODEL_BUNDLE_PATH}'
+        f'{MODEL_BUNDLE_PATH}, {ALTERNATE_MODEL_BUNDLE_PATH}, {LEGACY_MODEL_BUNDLE_PATH}'
     )
 
 

@@ -260,7 +260,11 @@ def get_bundle_metadata() -> dict:
     if metadata:
         return metadata
 
-    candidate_paths = [ROOT_DIR / 'models' / 'churn_production_bundle.pkl', ROOT_DIR / 'churn_production.pkl']
+    candidate_paths = [
+        ROOT_DIR / 'models' / 'churn_production_bundle.pkl',
+        ROOT_DIR / 'models' / 'churn_production_model.pkl',
+        ROOT_DIR / 'churn_production.pkl',
+    ]
     for path in candidate_paths:
         if path.exists():
             try:
@@ -1450,6 +1454,7 @@ def get_repo_health_snapshot() -> dict:
     }
     bundle_paths = [
         ROOT_DIR / 'models' / 'churn_production_bundle.pkl',
+        ROOT_DIR / 'models' / 'churn_production_model.pkl',
         ROOT_DIR / 'churn_production.pkl',
     ]
     available_bundles = [path for path in bundle_paths if path.exists()]
