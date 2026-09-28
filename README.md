@@ -1,5 +1,11 @@
 <div align="center">
 
+[![Live demo](https://img.shields.io/badge/Live%20demo-Open%20app-ff4b4b?logo=streamlit&logoColor=white)](https://YOUR-APP-NAME.streamlit.app)
+
+This Streamlit app provides customer churn predictions, retention recommendations, monitoring, and model governance views. PostgreSQL history and GitHub Actions dispatch are optional integrations.
+
+**Run locally:** `python -m pip install -r requirements.txt` then `streamlit run streamlit_app.py` from the repository root. Optional integration settings are documented in `.streamlit/secrets.toml.example`.
+
 # 📉 Churn Prediction MLOps App
 
 **A production-style customer churn system — prediction, governance, monitoring, and automated retraining, end to end.**

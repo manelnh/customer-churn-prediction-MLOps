@@ -1,5 +1,7 @@
 chu.env
 .venv/
+.env
+.streamlit/secrets.toml
 venv/
 env/
 __pycache__/

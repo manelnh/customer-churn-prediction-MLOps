@@ -23,6 +23,24 @@ import plotly.express as px
 import plotly.graph_objects as go
 import Scripts.db_utils as db_utils
 
+
+def get_streamlit_secret(name: str, default: str = '') -> str:
+    """Read an optional deployment secret without requiring a local secrets file."""
+    try:
+        return str(st.secrets.get(name, default)).strip()
+    except Exception:
+        return default
+
+
+# Secrets configured in Community Cloud take precedence over local environment values.
+for _secret_name in (
+    'GITHUB_ACTIONS_TOKEN', 'DATABASE_URL', 'GITHUB_REPOSITORY',
+    'GITHUB_WORKFLOW_REF', 'GITHUB_TRAINING_WORKFLOW', 'GITHUB_MONITORING_WORKFLOW',
+):
+    _secret_value = get_streamlit_secret(_secret_name)
+    if _secret_value:
+        os.environ[_secret_name] = _secret_value
+
 # Suppress Git/Python warnings for cleaner output
 os.environ["GIT_PYTHON_REFRESH"] = "quiet"
 logging.getLogger("mlflow").setLevel(logging.ERROR)
@@ -1094,15 +1112,23 @@ def get_cached_model_bundle():
 
 @st.cache_data(ttl=5, show_spinner=False)
 def load_platform_data():
-    connection = get_postgres_connection()
     try:
+        connection = get_postgres_connection()
         bootstrap_platform_tables_if_enabled(connection)
         predictions = load_prediction_logs(connection)
         alerts_df = load_alerts(connection)
         governance_df = load_governance_decisions(connection)
         return predictions, alerts_df, governance_df
+    except Exception as error:
+        st.warning(
+            'Platform history is unavailable because PostgreSQL is not configured or could not be reached. '
+            'Prediction and analysis views remain available. Configure DATABASE_URL in Streamlit secrets to enable it.'
+        )
+        logging.getLogger(__name__).warning('Could not load PostgreSQL platform data: %s', error)
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     finally:
-        connection.close()
+        if 'connection' in locals():
+            connection.close()
 
 
 def clear_runtime_caches(clear_model_bundle: bool = False):
@@ -1120,7 +1146,7 @@ def format_currency_tnd(value: float | int, decimals: int = 0) -> str:
 
 def get_github_training_dispatch_config() -> dict:
     return {
-        'token': os.getenv('GITHUB_ACTIONS_TOKEN', '').strip(),
+        'token': get_streamlit_secret('GITHUB_ACTIONS_TOKEN', os.getenv('GITHUB_ACTIONS_TOKEN', '')).strip(),
         'repository': os.getenv('GITHUB_REPOSITORY', '').strip(),
         'workflow': os.getenv('GITHUB_TRAINING_WORKFLOW', 'training.yml').strip(),
         'ref': os.getenv('GITHUB_WORKFLOW_REF', 'main').strip(),
