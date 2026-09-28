@@ -260,7 +260,7 @@ def get_bundle_metadata() -> dict:
     if metadata:
         return metadata
 
-    candidate_paths = [ROOT_DIR / 'churn_production.pkl', ROOT_DIR / 'models' / 'churn_production_bundle.pkl']
+    candidate_paths = [ROOT_DIR / 'models' / 'churn_production_bundle.pkl', ROOT_DIR / 'churn_production.pkl']
     for path in candidate_paths:
         if path.exists():
             try:
@@ -1451,7 +1451,6 @@ def get_repo_health_snapshot() -> dict:
     bundle_paths = [
         ROOT_DIR / 'models' / 'churn_production_bundle.pkl',
         ROOT_DIR / 'churn_production.pkl',
-        ROOT_DIR / 'churn_production_bundle.pkl',
     ]
     available_bundles = [path for path in bundle_paths if path.exists()]
     latest_bundle = max(available_bundles, key=lambda path: path.stat().st_mtime) if available_bundles else None

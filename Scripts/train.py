@@ -18,7 +18,6 @@ if str(ROOT_DIR) not in sys.path:
 
 from Scripts.model_utils import (
     CANDIDATE_MODEL_ALIAS,
-    LEGACY_MODEL_BUNDLE_PATH,
     MODEL_BUNDLE_PATH,
     MODEL_REGISTRY_NAME,
     PRODUCTION_MODEL_ALIAS,
@@ -38,7 +37,6 @@ from Scripts.model_utils import (
 
 DATA_PATH = ROOT_DIR / 'telco_churn_cleaned.csv'
 BUNDLE_PATH = MODEL_BUNDLE_PATH
-LEGACY_BUNDLE_PATH = LEGACY_MODEL_BUNDLE_PATH
 DROP_COLUMNS = ['Support_Tickets', 'App_Logins']
 
 
@@ -358,12 +356,10 @@ def main(profile: str = 'quick'):
         'test_metrics': best_model_record['test_metrics'],
     }
     save_bundle(BUNDLE_PATH, best_model_record['model'], dv, scaler, metadata=bundle_metadata)
-    save_bundle(LEGACY_BUNDLE_PATH, best_model_record['model'], dv, scaler, metadata=bundle_metadata)
 
     register_best_model(best_model_record, dv, scaler)
 
     print(f'Best model saved to: {BUNDLE_PATH} ({best_model_record["name"]})')
-    print(f'Legacy compatibility bundle saved to: {LEGACY_BUNDLE_PATH}')
 
 
 if __name__ == '__main__':

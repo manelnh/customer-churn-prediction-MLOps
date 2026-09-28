@@ -21,6 +21,7 @@ mlflow.db
 *.db
 models/*.pkl
 *.pkl
+!models/churn_production_bundle.pkl
 
 # Runtime outputs
 *.log
