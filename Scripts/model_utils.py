@@ -29,6 +29,7 @@ DATA_FILE = Path(__file__).resolve().parents[1] / 'telco_churn_cleaned.csv'
 ROOT_DIR = Path(__file__).resolve().parents[1]
 MODEL_BUNDLE_PATH = ROOT_DIR / 'models' / 'churn_production_bundle.pkl'
 LEGACY_MODEL_BUNDLE_PATH = ROOT_DIR / 'churn_production.pkl'
+ROOT_MODEL_BUNDLE_PATH = ROOT_DIR / 'churn_production_bundle.pkl'
 DEFAULT_DROP_COLUMNS = ['Support_Tickets', 'App_Logins']
 PRODUCTION_BASELINE_PARAMS = {'C': 100.0, 'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced'}
 PRODUCTION_BASELINE_METRICS = {'accuracy': 0.867, 'f1': 0.785, 'roc_auc': 0.951}
@@ -188,6 +189,7 @@ def load_active_model_bundle() -> dict:
         [
             ('legacy local bundle', lambda: load_bundle(LEGACY_MODEL_BUNDLE_PATH)),
             ('local production bundle', lambda: load_bundle(MODEL_BUNDLE_PATH)),
+            ('root production bundle', lambda: load_bundle(ROOT_MODEL_BUNDLE_PATH)),
         ]
     )
     last_error = None
