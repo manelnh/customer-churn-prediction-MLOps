@@ -1,16 +1,18 @@
+# Churn Prediction MLOps App
+
+## Live demo
+
 <div align="center">
 
-[![Live demo](https://img.shields.io/badge/Live%20demo-Open%20app-ff4b4b?logo=streamlit&logoColor=white)](https://customer-churn-prediction-mlops-crubmoactfmxfhqkzkyw92.streamlit.app)
+[![OPEN THE LIVE APP](https://img.shields.io/badge/OPEN-THE%20LIVE%20APP-ff4b4b?style=for-the-badge&logo=streamlit&logoColor=white)](https://customer-churn-prediction-mlops-crubmoactfmxfhqkzkyw92.streamlit.app)
+
+</div>
 
 This Streamlit app provides customer churn predictions, retention recommendations, monitoring, and model governance views. PostgreSQL history and GitHub Actions dispatch are optional integrations.
 
-**Run locally:** `python -m pip install -r requirements.txt` then `streamlit run streamlit_app.py` from the repository root. Optional integration settings are documented in `.streamlit/secrets.toml.example`.
+**Run locally:** From the repository root, install requirements with **python -m pip install -r requirements.txt**, then start the app with **streamlit run streamlit_app.py**. Optional integration settings are documented in **.streamlit/secrets.toml.example**.
 
-# 📉 Churn Prediction MLOps App
-
-**A production-style customer churn system — prediction, governance, monitoring, and automated retraining, end to end.**
-
-*Built to demonstrate a complete MLOps lifecycle: not just "a model that predicts churn," but the surrounding infrastructure that keeps that model trustworthy over time — logging, monitoring, scheduled retraining, and a reviewable audit trail for every decision.*
+**A production-style customer churn system: prediction, governance, monitoring, and automated retraining, end to end.**
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-app-ff4b4b?logo=streamlit&logoColor=white)
@@ -18,8 +20,6 @@ This Streamlit app provides customer churn predictions, retention recommendation
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
-
-</div>
 
 ---
 
