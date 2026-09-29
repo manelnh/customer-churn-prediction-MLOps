@@ -3594,8 +3594,9 @@ def render_single_prediction_tab(model, dv, scaler):
         for driver in top_drivers:
             st.write(f"- **{format_feature_name(driver['feature'])}**: {driver['impact']:.3f}")
 
-    connection = get_postgres_connection()
+    connection = None
     try:
+        connection = get_postgres_connection()
         bootstrap_platform_tables_if_enabled(connection)
         prediction_id = insert_prediction_log(
             connection, input_features=customer_data, predicted_probability=probability,
@@ -3608,9 +3609,14 @@ def render_single_prediction_tab(model, dv, scaler):
         clear_runtime_caches()
         st.success(f'Prediction stored successfully with record ID `{prediction_id}`.')
     except Exception as error:
-        st.error(f'Unable to save the prediction to PostgreSQL: {error}')
+        st.warning(
+            'Prediction was calculated, but it could not be saved to PostgreSQL. '
+            'Configure DATABASE_URL in Streamlit secrets to keep prediction history.'
+        )
+        logging.getLogger(__name__).warning('Unable to persist prediction to PostgreSQL: %s', error)
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
 
     with st.expander('Customer Profile Summary'):
         summary_df = pd.DataFrame(
@@ -3633,7 +3639,10 @@ def render_manager_insights_tab(predictions: pd.DataFrame, alerts_df: pd.DataFra
 
     # Calculate KPIs
     if monitoring_df.empty:
-        st.info('No prediction data available yet. Run some predictions first.')
+        st.info(
+            'No saved prediction history is available yet. Configure DATABASE_URL in Streamlit secrets '
+            'and save predictions to populate this dashboard.'
+        )
         return
 
     computed_alerts = detect_monitoring_alerts(monitoring_df, active_baseline_metrics)
