@@ -24,7 +24,7 @@ def get_postgres_connection():
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         sanitized_url = database_url.replace('postgresql+psycopg2://', 'postgresql://', 1)
-        return psycopg2.connect(sanitized_url)
+        return psycopg2.connect(sanitized_url, connect_timeout=5)
 
     return psycopg2.connect(
         host=os.getenv('POSTGRES_HOST', 'db'),
@@ -32,6 +32,7 @@ def get_postgres_connection():
         dbname=os.getenv('POSTGRES_DB', 'churn_db'),
         user=os.getenv('POSTGRES_USER', 'postgres'),
         password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        connect_timeout=5,
     )
 
 
