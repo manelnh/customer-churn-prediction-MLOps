@@ -1,4 +1,4 @@
-# Customer Churn Prediction â€” MLOps Experiment
+# Customer Churn Prediction - MLOps Experiment
 
 <div align="center">
 
@@ -22,6 +22,19 @@ A customer churn prediction project exploring how model training, inference, tra
   <img src="assets/app_1.png" alt="Manager Insights dashboard with churn risk and operational queue" width="850">
 </p>
 
+## Problem statement
+
+Customer churn can reduce recurring revenue, and a churn score alone does not explain which customers may need attention or how teams can organize follow-up. This project explores a practical workflow for identifying at-risk customers, reviewing prediction results, and recording retention actions. It also provides a place to experiment with model tracking and monitoring. The project is an MLOps learning experiment; training and monitoring currently run locally.
+
+## Technical stack
+
+| Component | Role in this project |
+|---|---|
+| [![Streamlit](https://img.shields.io/badge/Streamlit-app-ff4b4b?logo=streamlit&logoColor=white)](https://streamlit.io/) | User interface for customer predictions, insights, retention actions, and model review. |
+| [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/) | Stores prediction and governance history; runs as a service in Docker Compose. |
+| [![MLflow](https://img.shields.io/badge/MLflow-tracking-0194E2?logo=mlflow&logoColor=white)](https://mlflow.org/) | Tracks local training and monitoring runs. |
+| [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/) | Runs the app, PostgreSQL, and MLflow together for local development. |
+| [![GitHub Actions](https://img.shields.io/badge/GitHub-Actions-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions) | Runs CI checks and builds/publishes the container image through CD. |
 ## About the project
 
 This project applies customer churn prediction to a small operational workflow. The Streamlit app supports individual predictions, customer risk review, retention actions, and model evaluation. PostgreSQL stores prediction and governance records in the local Docker setup, and MLflow records experiment runs.
