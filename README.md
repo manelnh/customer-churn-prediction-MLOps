@@ -91,8 +91,51 @@ Optional integration settings are documented in `.streamlit/secrets.toml.example
 
 ## App sections
 
-The app includes views for manager insights, individual predictions, retention actions, monitoring and retraining, churn analytics, and model governance/evaluation.
+The app is organized around a practical review loop: understand the portfolio, score a customer, choose a response, and review the model and outcomes. Each view serves a different decision, while saved prediction history connects the workflow across tabs.
 
+<p align="center">
+  <img src="assets/app_3.png" alt="Manager Insights screen showing application tabs, key indicators, churn risk distribution, and decision queue" width="100%">
+  <br>
+  <sub>The dashboard combines a decision-focused sidebar with portfolio indicators and risk distribution.</sub>
+</p>
+
+### 1. Manager Insights - understand the portfolio
+
+A management overview of saved predictions and current churn exposure. KPI cards summarize revenue at risk, system status, the area with the highest exposure, and a model trust score. Risk distribution and operational queue summaries help show where customer follow-up is concentrated.
+
+**Useful for:** starting a review, spotting a concentration of risk, and deciding which part of the workflow needs attention.
+
+### 2. Predictions - assess one customer
+
+Enter a customer's profile to calculate churn probability, predicted label, and risk tier. The result includes a plain-language summary of likely churn factors, plus expandable technical driver details. If PostgreSQL is configured, the prediction is saved so it can be reviewed in other sections.
+
+**Useful for:** assessing a specific case and creating a traceable prediction record.
+
+### 3. Action Center - turn risk into follow-up
+
+Work through saved predictions in a decision queue. The view summarizes pending actions, completed actions, known outcomes, and revenue at risk. For a selected customer, it displays relevant context and ranked action recommendations; a manager can record a chosen action and track its status.
+
+**Useful for:** prioritizing outreach and keeping an action history tied to the prediction that prompted it.
+
+### 4. Monitoring & Retraining - review model health
+
+Review saved prediction evidence, model health indicators, drift-style alerts, and the current retraining recommendation. The local monitoring cycle can refresh alerts and, when configured, start local retraining after a threshold is reached. Ground-truth feedback can also be recorded later to compare predictions with known customer outcomes.
+
+**Useful for:** checking whether model behavior or risk patterns warrant investigation or retraining.
+
+### 5. Deep-Dive Analytics - explore customer segments
+
+Explore saved prediction data through focused views for demographics, services, billing and contracts, tenure and usage, geography, and feature correlations. Summary metrics provide context for the charts. The analysis depends on the prediction history available in the database.
+
+**Useful for:** examining how churn risk and customer characteristics vary across segments.
+
+### 6. Governance & Lab - compare a candidate model
+
+Adjust logistic-regression settings, train or evaluate a candidate, and compare its metrics with the current baseline. A governance verdict records whether the candidate should be accepted or rejected, along with a rationale and run details when PostgreSQL is configured.
+
+**Useful for:** making model changes reviewable before choosing to use a candidate.
+
+> **Suggested path:** start with **Manager Insights**, investigate individual cases in **Predictions**, record follow-up in **Action Center**, then review model health in **Monitoring & Retraining**. Use **Deep-Dive Analytics** and **Governance & Lab** for segment analysis and model experimentation.
 ## Local training and monitoring
 
 Training and monitoring can be started from the repository root:
