@@ -16,6 +16,18 @@ A customer churn prediction project exploring how model training, inference, tra
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 
+## Table of contents
+
+- [Preview](#preview)
+- [Problem statement](#problem-statement)
+- [Technical stack](#technical-stack)
+- [About the project](#about-the-project)
+- [Architecture](#architecture)
+- [Local setup](#local-setup)
+- [App sections](#app-sections)
+- [Local training and monitoring](#local-training-and-monitoring)
+- [GitHub Actions: CI/CD](#github-actions-cicd)
+- [Project scope and next steps](#project-scope-and-next-steps)
 ## Preview
 
 <p align="center">
@@ -131,3 +143,8 @@ The repository also contains optional scheduled/manual Training and Monitoring w
   <sub>Continuous delivery workflow in GitHub Actions.</sub>
 </p>
 
+## Project scope and next steps
+
+This repository demonstrates selected MLOps practices in a local development setup: a prediction interface, experiment tracking, monitoring scripts, a Dockerized database, and GitHub CI/CD workflows. It is not a fully automated production deployment. Training and monitoring are run locally; the optional remote workflows need hosted PostgreSQL and MLflow services.
+
+Possible next steps include connecting the remote workflows to hosted services and validating a deployed container through the CD deployment hook.
