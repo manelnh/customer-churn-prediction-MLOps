@@ -19,7 +19,7 @@ A customer churn prediction project exploring how model training, inference, tra
 ## Table of contents
 
 - [Preview](#preview)
-- [Problem statement](#problem-statement)
+- [Problem statement and motivation](#problem-statement-and-motivation)
 - [Technical stack](#technical-stack)
 - [About the project](#about-the-project)
 - [Architecture](#architecture)
@@ -34,10 +34,21 @@ A customer churn prediction project exploring how model training, inference, tra
   <img src="assets/app_1.png" alt="Manager Insights dashboard with churn risk and operational queue" width="850">
 </p>
 
-## Problem statement
+## Problem statement and motivation
 
-Customer churn can reduce recurring revenue, and a churn score alone does not explain which customers may need attention or how teams can organize follow-up. This project explores a practical workflow for identifying at-risk customers, reviewing prediction results, and recording retention actions. It also provides a place to experiment with model tracking and monitoring. The project is an MLOps learning experiment; training and monitoring currently run locally.
+Businesses collect large volumes of customer data, but data only creates value when it helps people make decisions in time. In customer retention, conventional reporting often explains what happened after a customer leaves. By then, the opportunity to contact that customer may have passed.
 
+### The challenge
+
+Customer churn is difficult to anticipate from any single signal. Contract type, tenure, billing, and service usage can combine in ways that are hard to assess manually across a large customer base. Teams need a way to surface customers who may be at risk early enough to review their situation and consider a retention action.
+
+There is also an operational gap: a model can produce useful predictions and still have little impact if its results stay inside a notebook or are inaccessible to business teams. Predictions need to be understandable, connected to follow-up, and reviewable over time.
+
+### Project response
+
+This project explores that gap through a telecommunications churn use case. It combines a churn model with a Streamlit decision-support app so users can review portfolio risk, score an individual customer, inspect risk drivers, record a retention action, and examine model experiments and monitoring results. PostgreSQL and MLflow support local history and tracking, while GitHub Actions provides CI and container delivery.
+
+The goal is to demonstrate how predictive analysis can be connected to business decisions and model lifecycle practices. This is a local MLOps experiment, not a fully automated production service: training and monitoring are run locally, and the optional remote workflows require hosted services and additional configuration. The telecommunications dataset serves as the pilot context; applying the approach to other industries would require suitable data and validation for each use case.
 ## Technical stack
 
 | Component | Role in this project |
